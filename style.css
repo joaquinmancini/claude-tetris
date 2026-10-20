@@ -89,6 +89,33 @@ body {
   border-color: var(--accent);
 }
 
+#skin-select {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  margin-top: -8px;
+  background: var(--canvas-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+#skin-select:hover {
+  border-color: var(--accent);
+}
+
+/* Neon: fondo negro del canvas sin importar el tema */
+[data-skin="neon"] #board,
+[data-skin="neon"] #next-canvas {
+  background: #000;
+}
+
 .game-area {
   position: relative;
 }

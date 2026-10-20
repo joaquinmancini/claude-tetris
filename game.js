@@ -29,9 +29,137 @@ const PALETTES = {
 };
 const GHOST_ALPHA = { dark: 0.2, light: 0.35 };
 
+const NEON_PALETTE = [
+  null,
+  '#00f0ff', // I
+  '#fff200', // O
+  '#d500f9', // T
+  '#39ff14', // S
+  '#ff1744', // Z
+  '#2979ff', // J
+  '#ff9100', // L
+];
+
+const PASTEL_PALETTE = [
+  null,
+  '#a8e6ef', // I
+  '#fff1a8', // O
+  '#d9b8f0', // T
+  '#b5ead7', // S
+  '#ffb3ba', // Z
+  '#b5d0ff', // J
+  '#ffd6a5', // L
+];
+
+// Variante con más contraste para fondo claro
+const PASTEL_LIGHT_PALETTE = [
+  null,
+  '#6fc9d6', // I
+  '#f2d24f', // O
+  '#c08ee6', // T
+  '#7fd3ae', // S
+  '#f08c97', // Z
+  '#84aef0', // J
+  '#f2b36d', // L
+];
+
 let theme = 'dark';
+let skin = 'retro';
 let COLORS = PALETTES.dark;
 let gridColor = '#22222e';
+let ghostAlpha = GHOST_ALPHA.dark;
+
+// Ruta de rectángulo redondeado manual (sin depender de roundRect)
+function roundedRectPath(context, x, y, w, h, r) {
+  context.beginPath();
+  context.moveTo(x + r, y);
+  context.lineTo(x + w - r, y);
+  context.arc(x + w - r, y + r, r, -Math.PI / 2, 0);
+  context.lineTo(x + w, y + h - r);
+  context.arc(x + w - r, y + h - r, r, 0, Math.PI / 2);
+  context.lineTo(x + r, y + h);
+  context.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI);
+  context.lineTo(x, y + r);
+  context.arc(x + r, y + r, r, Math.PI, Math.PI * 1.5);
+  context.closePath();
+}
+
+// Cada skin define paleta, color de grilla, alpha del ghost y su drawBlock.
+// Las skins son independientes del tema claro/oscuro (solo Retro usa las paletas por tema).
+const SKINS = {
+  retro: {
+    palette: t => PALETTES[t],
+    grid: () => getComputedStyle(document.documentElement).getPropertyValue('--grid').trim(),
+    ghost: t => GHOST_ALPHA[t],
+    drawBlock(context, x, y, color, size) {
+      context.fillStyle = color;
+      context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
+      // highlight
+      context.fillStyle = 'rgba(255,255,255,0.12)';
+      context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
+    },
+  },
+  neon: {
+    palette: () => NEON_PALETTE,
+    grid: () => '#1c1c24',
+    ghost: () => 0.35,
+    drawBlock(context, x, y, color, size, alpha) {
+      const px = x * size + 2, py = y * size + 2, s = size - 4;
+      context.strokeStyle = color;
+      context.lineWidth = 2;
+      // Sin glow para el ghost (más barato)
+      if (alpha >= 1) {
+        context.shadowColor = color;
+        context.shadowBlur = 8;
+      }
+      context.fillStyle = color;
+      context.globalAlpha = alpha * 0.35;
+      context.fillRect(px, py, s, s);
+      context.globalAlpha = alpha;
+      context.strokeRect(px, py, s, s);
+      context.shadowBlur = 0; // evita que el glow se filtre a otros dibujos
+      context.shadowColor = 'transparent';
+    },
+  },
+  pastel: {
+    palette: t => (t === 'light' ? PASTEL_LIGHT_PALETTE : PASTEL_PALETTE),
+    grid: t => (t === 'light' ? '#ece8f3' : '#25252f'),
+    ghost: t => (t === 'light' ? 0.5 : 0.3),
+    drawBlock(context, x, y, color, size) {
+      const px = x * size + 1, py = y * size + 1, s = size - 2;
+      roundedRectPath(context, px, py, s, s, size * 0.3);
+      context.fillStyle = color;
+      context.fill();
+      // brillo suave
+      roundedRectPath(context, px + 3, py + 3, s - 6, s * 0.3, size * 0.12);
+      context.fillStyle = 'rgba(255,255,255,0.35)';
+      context.fill();
+    },
+  },
+  pixel: {
+    palette: t => PALETTES[t],
+    grid: t => (t === 'light' ? '#dfe2ec' : '#1d1d28'),
+    ghost: t => GHOST_ALPHA[t],
+    drawBlock(context, x, y, color, size) {
+      const px = x * size, py = y * size;
+      const u = Math.max(1, Math.floor(size / 6)); // tamaño del "píxel"
+      context.fillStyle = color;
+      context.fillRect(px, py, size, size);
+      // sombra (abajo/derecha) y luz (arriba/izquierda)
+      context.fillStyle = 'rgba(0,0,0,0.3)';
+      context.fillRect(px, py + size - u, size, u);
+      context.fillRect(px + size - u, py, u, size);
+      context.fillStyle = 'rgba(255,255,255,0.4)';
+      context.fillRect(px, py, size - u, u);
+      context.fillRect(px, py, u, size - u);
+      // patrón de tablero de ajedrez interior
+      context.fillStyle = 'rgba(0,0,0,0.15)';
+      for (let i = 1; i < 5; i++)
+        for (let j = 1; j < 5; j++)
+          if ((i + j) % 2 === 0) context.fillRect(px + i * u, py + j * u, u, u);
+    },
+  },
+};
 
 const PIECES = [
   null,
@@ -58,6 +186,7 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const themeBtn = document.getElementById('theme-toggle');
+const skinSelect = document.getElementById('skin-select');
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 
@@ -177,14 +306,10 @@ function updateHUD() {
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
+  context.save();
   context.globalAlpha = alpha ?? 1;
-  context.fillStyle = color;
-  context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
-  // highlight
-  context.fillStyle = 'rgba(255,255,255,0.12)';
-  context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
-  context.globalAlpha = 1;
+  SKINS[skin].drawBlock(context, x, y, COLORS[colorIndex], size, alpha ?? 1);
+  context.restore();
 }
 
 function drawGrid() {
@@ -218,7 +343,7 @@ function draw() {
   for (let r = 0; r < current.shape.length; r++)
     for (let c = 0; c < current.shape[r].length; c++)
       if (current.shape[r][c])
-        drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, GHOST_ALPHA[theme]);
+        drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, ghostAlpha);
 
   // current piece
   for (let r = 0; r < current.shape.length; r++)
@@ -295,6 +420,8 @@ function init() {
 }
 
 document.addEventListener('keydown', e => {
+  // Si el selector de skin conserva el foco, soltarlo para que las teclas no lo cambien
+  if (document.activeElement === skinSelect) skinSelect.blur();
   if (e.code === 'KeyP') { togglePause(); return; }
   if (paused || gameOver) return;
   switch (e.code) {
@@ -319,15 +446,12 @@ document.addEventListener('keydown', e => {
   updateHUD();
 });
 
-function applyTheme(name, persist) {
-  theme = name === 'light' ? 'light' : 'dark';
-  document.documentElement.dataset.theme = theme;
-  COLORS = PALETTES[theme];
-  gridColor = getComputedStyle(document.documentElement).getPropertyValue('--grid').trim();
-  themeBtn.textContent = theme === 'light' ? '☾ Oscuro' : '☀ Claro';
-  if (persist) {
-    try { localStorage.setItem('theme', theme); } catch (e) {}
-  }
+// Recalcula paleta, grilla y ghost según tema + skin activos
+function refreshStyle() {
+  const s = SKINS[skin];
+  COLORS = s.palette(theme);
+  gridColor = s.grid(theme);
+  ghostAlpha = s.ghost(theme);
   // En pausa/game over el loop no corre: redibujar manualmente
   if (current) {
     draw();
@@ -335,14 +459,42 @@ function applyTheme(name, persist) {
   }
 }
 
+function applyTheme(name, persist) {
+  theme = name === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  themeBtn.textContent = theme === 'light' ? '☾ Oscuro' : '☀ Claro';
+  if (persist) {
+    try { localStorage.setItem('theme', theme); } catch (e) {}
+  }
+  refreshStyle();
+}
+
+function applySkin(name, persist) {
+  skin = SKINS[name] ? name : 'retro';
+  document.documentElement.dataset.skin = skin;
+  skinSelect.value = skin;
+  if (persist) {
+    try { localStorage.setItem('skin', skin); } catch (e) {}
+  }
+  refreshStyle();
+}
+
 themeBtn.addEventListener('click', () => {
   applyTheme(theme === 'light' ? 'dark' : 'light', true);
   themeBtn.blur(); // evita que Espacio (caída) reactive el botón
+});
+
+skinSelect.addEventListener('change', () => {
+  applySkin(skinSelect.value, true);
+  skinSelect.blur(); // evita que flechas/Espacio cambien la selección en juego
 });
 
 restartBtn.addEventListener('click', init);
 
 let savedTheme = null;
 try { savedTheme = localStorage.getItem('theme'); } catch (e) {}
+let savedSkin = null;
+try { savedSkin = localStorage.getItem('skin'); } catch (e) {}
 applyTheme(savedTheme, false);
+applySkin(savedSkin, false);
 init();

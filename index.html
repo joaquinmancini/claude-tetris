@@ -9,6 +9,11 @@
     try {
       if (localStorage.getItem('theme') === 'light') document.documentElement.dataset.theme = 'light';
     } catch (e) {}
+    // Skin guardada (retro por defecto)
+    try {
+      var s = localStorage.getItem('skin');
+      if (s) document.documentElement.dataset.skin = s;
+    } catch (e) {}
   </script>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -16,6 +21,12 @@
   <div class="wrapper">
     <div class="title-bar">
       <h1 class="title">TETRIS</h1>
+      <select id="skin-select" aria-label="Cambiar skin">
+        <option value="retro">Retro</option>
+        <option value="neon">Neon</option>
+        <option value="pastel">Pastel</option>
+        <option value="pixel">Pixel art</option>
+      </select>
       <button id="theme-toggle" type="button" aria-label="Cambiar tema">☀ Claro</button>
     </div>
 
