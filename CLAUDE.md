@@ -16,10 +16,11 @@ Three files: `index.html` (DOM + canvases), `style.css`, and `game.js` (all logi
 
 Key points in `game.js` that span multiple functions:
 
-- **State** is module-level `let` variables (`board`, `current`, `next`, `score`, `lines`, `level`, `paused`, `gameOver`, ...), all reset in `init()`, which is also the restart button handler.
+- **State** is module-level `let` variables (`board`, `current`, `next`, `score`, `lines`, `level`, `paused`, `gameOver`, ...), reset in `resetState()`. `init()` = `resetState()` + start loop (restart/Jugar button handler); on page load only `resetState()` + `draw()` run and the start screen (`#start-overlay`, `started=false`) is shown, so nothing auto-starts.
 - **Piece/board encoding**: board cells and piece shape cells hold a color index 1–7 (0 = empty) that indexes both `COLORS` and `PIECES`. Pieces are square matrices rotated via `rotateCW`; `tryRotate` applies simple horizontal wall kicks `[0,-1,1,-2,2]`.
 - **Piece lifecycle**: `lockPiece()` → `merge()` → `clearLines()` (updates lines/score/level/`dropInterval`) → `spawn()` (promotes `next`, collision at spawn calls `endGame()`). Both hard drop, soft drop and the gravity tick in `loop()` funnel into `lockPiece()`.
 - **Game loop**: `requestAnimationFrame` `loop()` accumulates `dropAccum` against `dropInterval` (`max(100, 1000 - (level-1)*90)`). Pause/game over use `cancelAnimationFrame(animId)`; resuming resets `lastTime` and calls `loop` directly.
 - **Rendering**: `draw()` redraws everything each frame (grid, board, ghost via `ghostY()` at alpha 0.2, current piece). `drawNext()` renders to the separate 120×120 `#next-canvas` and is only called from `spawn()`.
 - **Canvas size coupling**: `#board` width/height in `index.html` (300×600) must equal `COLS*BLOCK` × `ROWS*BLOCK` in `game.js`.
 - **Scoring**: `LINE_SCORES[cleared] * level`; hard drop +2/cell, soft drop +1/row.
+- **Records**: `localStorage['records']` = `{top:[{name,score,lines,combo,date}] (max 5, by score desc), bestCombo, maxLines}`, via `loadRecords()`/`saveRecords()` (try/catch, tolerant of corrupt JSON). `endGame()` updates the stats, shows the table in the game-over overlay and, if the score qualifies, a name form (`saveCurrentRecord()` on submit highlights the new row). Combo = consecutive locks that clear lines (`combo`/`maxCombo`, updated in `clearLines()`). The global keydown handler ignores events from inputs and, before start, only handles Enter.
