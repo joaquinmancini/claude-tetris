@@ -58,8 +58,16 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const themeBtn = document.getElementById('theme-toggle');
+const startOverlay = document.getElementById('start-overlay');
+const startBtn = document.getElementById('start-btn');
+const resetRecordsBtn = document.getElementById('reset-records-btn');
+const recordsOverWrap = document.getElementById('records-over-wrap');
+const nameForm = document.getElementById('name-form');
+const nameInput = document.getElementById('name-input');
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let started = false; // false mientras se muestra la pantalla de inicio
+let combo = 0, maxCombo = 0; // piezas consecutivas que limpian líneas
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -128,6 +136,10 @@ function clearLines() {
     level = Math.floor(lines / 10) + 1;
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
     updateHUD();
+    combo++;
+    if (combo > maxCombo) maxCombo = combo;
+  } else {
+    combo = 0;
   }
 }
 
@@ -237,12 +249,113 @@ function drawNext() {
       drawBlock(nextCtx, offX + c, offY + r, shape[r][c], NB);
 }
 
+// ---- Records (localStorage) ----
+const MAX_RECORDS = 5;
+
+function loadRecords() {
+  const data = { top: [], bestCombo: 0, maxLines: 0 };
+  try {
+    const raw = JSON.parse(localStorage.getItem('records'));
+    if (raw && typeof raw === 'object') {
+      if (Array.isArray(raw.top)) {
+        data.top = raw.top
+          .filter(r => r && Number.isFinite(r.score))
+          .map(r => ({
+            name: String(r.name || 'Anónimo').slice(0, 12),
+            score: r.score,
+            lines: Number.isFinite(r.lines) ? r.lines : 0,
+            combo: Number.isFinite(r.combo) ? r.combo : 0,
+            date: String(r.date || ''),
+          }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, MAX_RECORDS);
+      }
+      if (Number.isFinite(raw.bestCombo)) data.bestCombo = raw.bestCombo;
+      if (Number.isFinite(raw.maxLines)) data.maxLines = raw.maxLines;
+    }
+  } catch (e) {}
+  return data;
+}
+
+function saveRecords(data) {
+  try { localStorage.setItem('records', JSON.stringify(data)); } catch (e) {}
+}
+
+function qualifies(data, pts) {
+  return pts > 0 && (data.top.length < MAX_RECORDS || pts > data.top[data.top.length - 1].score);
+}
+
+// Pinta la tabla y las estadísticas (nombres siempre con textContent)
+function renderRecords(tableId, statsId, highlight) {
+  const data = loadRecords();
+  const tbody = document.querySelector(`#${tableId} tbody`);
+  tbody.textContent = '';
+  if (!data.top.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 4;
+    td.className = 'empty';
+    td.textContent = 'Sin records todavía';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+  let marked = false;
+  data.top.forEach((rec, i) => {
+    const tr = document.createElement('tr');
+    if (!marked && highlight && rec.date === highlight.date && rec.name === highlight.name &&
+        rec.score === highlight.score && rec.lines === highlight.lines) {
+      tr.className = 'highlight';
+      marked = true;
+    }
+    [i + 1, rec.name, rec.score.toLocaleString(), `${rec.lines} L`].forEach(v => {
+      const td = document.createElement('td');
+      td.textContent = v;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  document.getElementById(statsId).textContent =
+    `Mejor combo: ${data.bestCombo} · Líneas máx.: ${data.maxLines}`;
+}
+
 function endGame() {
   gameOver = true;
   cancelAnimationFrame(animId);
   overlayTitle.textContent = 'GAME OVER';
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
+
+  const data = loadRecords();
+  const entra = qualifies(data, score);
+  data.bestCombo = Math.max(data.bestCombo, maxCombo);
+  data.maxLines = Math.max(data.maxLines, lines);
+  saveRecords(data);
+
+  nameForm.classList.toggle('hidden', !entra);
+  nameInput.value = '';
+  renderRecords('records-over', 'records-stats-over', null);
+  recordsOverWrap.classList.remove('hidden');
   overlay.classList.remove('hidden');
+  // Foco diferido: evita que teclas aún presionadas caigan en el campo
+  if (entra) setTimeout(() => { if (gameOver) nameInput.focus(); }, 500);
+}
+
+function saveCurrentRecord() {
+  const data = loadRecords();
+  if (!qualifies(data, score)) return;
+  const rec = {
+    name: nameInput.value.trim().slice(0, 12) || 'Anónimo',
+    score,
+    lines,
+    combo: maxCombo,
+    date: new Date().toISOString().slice(0, 10),
+  };
+  data.top.push(rec);
+  data.top.sort((a, b) => b.score - a.score);
+  data.top = data.top.slice(0, MAX_RECORDS);
+  saveRecords(data);
+  nameForm.classList.add('hidden');
+  renderRecords('records-over', 'records-stats-over', rec);
+  restartBtn.focus();
 }
 
 function togglePause() {
@@ -276,7 +389,7 @@ function loop(ts) {
   animId = requestAnimationFrame(loop);
 }
 
-function init() {
+function resetState() {
   board = createBoard();
   score = 0;
   lines = 0;
@@ -287,14 +400,29 @@ function init() {
   dropAccum = 0;
   lastTime = performance.now();
   next = randomPiece();
+  combo = 0;
+  maxCombo = 0;
   spawn();
   updateHUD();
+}
+
+function init() {
+  resetState();
+  started = true;
+  startOverlay.classList.add('hidden');
   overlay.classList.add('hidden');
+  recordsOverWrap.classList.add('hidden');
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
 
 document.addEventListener('keydown', e => {
+  // Escribir el nombre no debe disparar acciones de juego
+  if (e.target instanceof HTMLInputElement) return;
+  if (!started) {
+    if (e.code === 'Enter' && !(e.target instanceof HTMLButtonElement)) init();
+    return;
+  }
   if (e.code === 'KeyP') { togglePause(); return; }
   if (paused || gameOver) return;
   switch (e.code) {
@@ -340,9 +468,35 @@ themeBtn.addEventListener('click', () => {
   themeBtn.blur(); // evita que Espacio (caída) reactive el botón
 });
 
-restartBtn.addEventListener('click', init);
+restartBtn.addEventListener('click', () => {
+  // Si el récord quedó sin guardar, se guarda con el nombre actual (o Anónimo)
+  if (gameOver && !nameForm.classList.contains('hidden')) saveCurrentRecord();
+  init();
+  restartBtn.blur();
+});
+
+startBtn.addEventListener('click', () => {
+  init();
+  startBtn.blur();
+});
+
+nameForm.addEventListener('submit', e => {
+  e.preventDefault();
+  saveCurrentRecord();
+});
+
+resetRecordsBtn.addEventListener('click', () => {
+  if (confirm('¿Borrar todos los records?')) {
+    try { localStorage.removeItem('records'); } catch (e) {}
+    renderRecords('records-start', 'records-stats-start', null);
+  }
+  resetRecordsBtn.blur();
+});
 
 let savedTheme = null;
 try { savedTheme = localStorage.getItem('theme'); } catch (e) {}
 applyTheme(savedTheme, false);
-init();
+// Pantalla de inicio: estado válido pero sin arrancar el loop
+resetState();
+draw();
+renderRecords('records-start', 'records-stats-start', null);
